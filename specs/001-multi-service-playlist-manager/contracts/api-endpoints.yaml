@@ -1,0 +1,1371 @@
+openapi: 3.0.3
+info:
+  title: UniPlay Multi-Service Playlist Manager API
+  version: 1.0.0
+  description: |
+    REST API for managing playlists across multiple music streaming services.
+
+    **Features**:
+    - Connect multiple music service accounts (Spotify, Apple Music, Deezer, YouTube Music)
+    - Manage platform-native playlists with cross-service tracks
+    - Edit service playlists with bidirectional sync
+    - Copy playlists between services with track matching
+    - Export platform playlists to services
+
+    **Authentication**: All endpoints require Bearer token (JWT) in Authorization header.
+
+    **Versioning**: API uses URL-based versioning (`/api/v1/...`).
+
+  contact:
+    name: UniPlay API Support
+    email: api@uniplay.example.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.uniplay.example.com/api/v1
+    description: Production server
+  - url: https://staging-api.uniplay.example.com/api/v1
+    description: Staging server
+  - url: http://localhost:5000/api/v1
+    description: Local development server
+
+tags:
+  - name: Authentication
+    description: User registration, login, and token management
+  - name: Service Connections
+    description: Connect and manage music service accounts
+  - name: Playlists
+    description: Unified playlist operations (platform and service playlists)
+  - name: Platform Playlists
+    description: Platform-native playlist management
+  - name: Service Playlists
+    description: Service playlist references and sync
+  - name: Playlist Operations
+    description: Copy, export, and batch operations
+  - name: Tracks
+    description: Track search and metadata
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ==========================================
+  # AUTHENTICATION ENDPOINTS (FR-001)
+  # ==========================================
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user account
+      description: Create a new user account with email and password (FR-001)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 320
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: SecureP@ss123
+                  description: Minimum 8 characters, requires uppercase, lowercase, digit, special char
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login with email and password
+      description: Authenticate user and return JWT token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: SecureP@ss123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  tokenType:
+                    type: string
+                    example: Bearer
+                  expiresIn:
+                    type: integer
+                    example: 3600
+                    description: Token lifetime in seconds
+                  user:
+                    $ref: '#/components/schemas/UserDto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ==========================================
+  # SERVICE CONNECTIONS (FR-002, FR-003, FR-018, FR-021, FR-028)
+  # ==========================================
+  /service-connections:
+    get:
+      tags:
+        - Service Connections
+      summary: List user's connected service accounts
+      description: Get all service connections for authenticated user (FR-028)
+      responses:
+        '200':
+          description: List of connected services
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceConnectionDto'
+                  totalCount:
+                    type: integer
+                    example: 5
+
+    post:
+      tags:
+        - Service Connections
+      summary: Initiate OAuth flow for music service
+      description: Start OAuth authorization for a music service (FR-002, FR-003)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - serviceType
+              properties:
+                serviceType:
+                  type: string
+                  enum: [Spotify, AppleMusic, Deezer, YouTubeMusic]
+                  example: Spotify
+                redirectUri:
+                  type: string
+                  format: uri
+                  example: https://app.uniplay.example.com/callback
+      responses:
+        '200':
+          description: OAuth authorization URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorizationUrl:
+                    type: string
+                    format: uri
+                    example: https://accounts.spotify.com/authorize?client_id=...
+                  state:
+                    type: string
+                    description: CSRF protection token
+                    example: abc123xyz
+        '400':
+          description: Maximum connections reached (3 per service type)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /service-connections/callback:
+    post:
+      tags:
+        - Service Connections
+      summary: Complete OAuth flow
+      description: Exchange authorization code for access token (FR-002)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - serviceType
+                - code
+                - state
+              properties:
+                serviceType:
+                  type: string
+                  enum: [Spotify, AppleMusic, Deezer, YouTubeMusic]
+                code:
+                  type: string
+                  description: Authorization code from OAuth provider
+                state:
+                  type: string
+                  description: CSRF protection token
+      responses:
+        '201':
+          description: Service connected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceConnectionDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid authorization code or state mismatch
+
+  /service-connections/{connectionId}:
+    get:
+      tags:
+        - Service Connections
+      summary: Get service connection details
+      description: Retrieve details of a specific connection (FR-028)
+      parameters:
+        - name: connectionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Connection details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceConnectionDto'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Service Connections
+      summary: Disconnect service account
+      description: Remove service connection and hide associated playlists (FR-018)
+      parameters:
+        - name: connectionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Connection deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /service-connections/{connectionId}/refresh:
+    post:
+      tags:
+        - Service Connections
+      summary: Manually refresh OAuth token
+      description: Refresh expired access token (FR-021)
+      parameters:
+        - name: connectionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceConnectionDto'
+        '400':
+          description: Token refresh failed
+
+  # ==========================================
+  # UNIFIED PLAYLISTS VIEW (FR-004, FR-005, FR-016, FR-017)
+  # ==========================================
+  /playlists:
+    get:
+      tags:
+        - Playlists
+      summary: Get unified dashboard of all playlists
+      description: List platform and service playlists together (FR-004, FR-005, FR-016, FR-017)
+      parameters:
+        - name: search
+          in: query
+          description: Search playlists by name (FR-016)
+          schema:
+            type: string
+            example: workout
+        - name: serviceType
+          in: query
+          description: Filter by service type (FR-017)
+          schema:
+            type: string
+            enum: [Platform, Spotify, AppleMusic, Deezer, YouTubeMusic]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [updatedAt, createdAt, name, trackCount]
+            default: updatedAt
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Unified playlist list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  playlists:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlaylistSummaryDto'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationDto'
+
+  # ==========================================
+  # PLATFORM PLAYLISTS (FR-006, FR-007, FR-008, FR-019)
+  # ==========================================
+  /platform-playlists:
+    get:
+      tags:
+        - Platform Playlists
+      summary: List platform-native playlists
+      description: Get user's platform playlists (FR-006)
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Platform playlists list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  playlists:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlatformPlaylistDto'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationDto'
+
+    post:
+      tags:
+        - Platform Playlists
+      summary: Create new platform playlist
+      description: Create cross-service platform playlist (FR-006)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  example: My Cross-Service Mix
+                description:
+                  type: string
+                  maxLength: 1000
+                  example: Best tracks from Spotify and Apple Music
+                isPublic:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Playlist created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformPlaylistDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /platform-playlists/{playlistId}:
+    get:
+      tags:
+        - Platform Playlists
+      summary: Get platform playlist details
+      description: Retrieve playlist with all tracks (FR-006)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Playlist details with tracks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformPlaylistDetailDto'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Platform Playlists
+      summary: Update playlist metadata
+      description: Rename or update description (FR-008)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                description:
+                  type: string
+                  maxLength: 1000
+                isPublic:
+                  type: boolean
+      responses:
+        '200':
+          description: Playlist updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformPlaylistDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Platform Playlists
+      summary: Delete platform playlist
+      description: Permanently delete platform playlist (FR-008, FR-019)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Playlist deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /platform-playlists/{playlistId}/tracks:
+    post:
+      tags:
+        - Platform Playlists
+      summary: Add track to playlist
+      description: Add track from any service to platform playlist (FR-007)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - trackId
+              properties:
+                trackId:
+                  type: string
+                  format: uuid
+                  description: Internal track ID
+                position:
+                  type: integer
+                  minimum: 0
+                  description: Insert position (omit to append)
+      responses:
+        '201':
+          description: Track added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistTrackDto'
+        '400':
+          description: Track already exists in playlist
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Platform Playlists
+      summary: Remove track from playlist
+      description: Remove track by position (FR-007)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: position
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '204':
+          description: Track removed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /platform-playlists/{playlistId}/tracks/reorder:
+    post:
+      tags:
+        - Platform Playlists
+      summary: Reorder tracks in playlist
+      description: Move track from one position to another (FR-007)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fromPosition
+                - toPosition
+              properties:
+                fromPosition:
+                  type: integer
+                  minimum: 0
+                  example: 0
+                toPosition:
+                  type: integer
+                  minimum: 0
+                  example: 5
+      responses:
+        '200':
+          description: Track reordered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformPlaylistDetailDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # ==========================================
+  # SERVICE PLAYLISTS (FR-009, FR-010, FR-011, FR-020)
+  # ==========================================
+  /service-playlists:
+    get:
+      tags:
+        - Service Playlists
+      summary: List service playlists
+      description: Get playlists from connected services (FR-004)
+      parameters:
+        - name: serviceConnectionId
+          in: query
+          description: Filter by specific connection
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Service playlists list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  playlists:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServicePlaylistDto'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationDto'
+
+  /service-playlists/{playlistId}:
+    get:
+      tags:
+        - Service Playlists
+      summary: Get service playlist details
+      description: Retrieve service playlist with tracks
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Service playlist details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePlaylistDetailDto'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Service Playlists
+      summary: Update service playlist metadata
+      description: Rename service playlist (syncs to service) (FR-009)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                description:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '202':
+          description: Update queued for sync
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePlaylistDto'
+        '400':
+          description: Playlist not owned by user
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /service-playlists/{playlistId}/sync:
+    post:
+      tags:
+        - Service Playlists
+      summary: Manually sync service playlist
+      description: Trigger immediate sync from service (FR-020)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Sync initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Sync initiated
+                  syncStatus:
+                    type: string
+                    example: Pending
+
+  /service-playlists/{playlistId}/tracks:
+    post:
+      tags:
+        - Service Playlists
+      summary: Add track to service playlist
+      description: Add track from same service (syncs to service) (FR-010, FR-011)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - trackId
+              properties:
+                trackId:
+                  type: string
+                  format: uuid
+                position:
+                  type: integer
+                  minimum: 0
+      responses:
+        '202':
+          description: Add queued for sync
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Track add queued for sync
+        '400':
+          description: Track from different service (FR-011)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Cross-service tracks can only be added to platform playlists
+
+    delete:
+      tags:
+        - Service Playlists
+      summary: Remove track from service playlist
+      description: Remove track (syncs to service) (FR-009)
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: position
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '202':
+          description: Remove queued for sync
+
+  # ==========================================
+  # PLAYLIST OPERATIONS (FR-012, FR-013, FR-014, FR-015, FR-026)
+  # ==========================================
+  /playlist-operations/copy:
+    post:
+      tags:
+        - Playlist Operations
+      summary: Copy playlist to another service
+      description: Initiate cross-service playlist copy with track matching (FR-012)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sourcePlaylistId
+                - destinationServiceConnectionId
+              properties:
+                sourcePlaylistId:
+                  type: string
+                  format: uuid
+                  description: Service playlist to copy
+                destinationServiceConnectionId:
+                  type: string
+                  format: uuid
+                  description: Target service connection
+      responses:
+        '202':
+          description: Copy operation initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopyOperationDto'
+        '400':
+          description: Source and destination are same service
+
+  /playlist-operations/copy/{operationId}:
+    get:
+      tags:
+        - Playlist Operations
+      summary: Get copy operation status
+      description: Track copy progress and view results (FR-013, FR-026)
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Operation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopyOperationDetailDto'
+
+    delete:
+      tags:
+        - Playlist Operations
+      summary: Cancel copy operation
+      description: Cancel in-progress copy operation
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Operation cancelled
+
+  /playlist-operations/export:
+    post:
+      tags:
+        - Playlist Operations
+      summary: Export platform playlist to service(s)
+      description: Create service-specific version of platform playlist (FR-014, FR-015)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - platformPlaylistId
+                - destinationServiceConnectionIds
+              properties:
+                platformPlaylistId:
+                  type: string
+                  format: uuid
+                destinationServiceConnectionIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  description: Can export to multiple services
+      responses:
+        '202':
+          description: Export operation(s) initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CopyOperationDto'
+
+  # ==========================================
+  # TRACK SEARCH
+  # ==========================================
+  /tracks/search:
+    get:
+      tags:
+        - Tracks
+      summary: Search tracks across connected services
+      description: Search for tracks to add to playlists
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          example: bohemian rhapsody
+        - name: serviceTypes
+          in: query
+          description: Limit search to specific services (comma-separated)
+          schema:
+            type: string
+          example: Spotify,AppleMusic
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrackDto'
+
+  /tracks/{trackId}:
+    get:
+      tags:
+        - Tracks
+      summary: Get track metadata
+      description: Retrieve detailed track information
+      parameters:
+        - name: trackId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Track details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackDto'
+
+# ==========================================
+# COMPONENTS
+# ==========================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token from /auth/login
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      description: Page number (1-indexed)
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+
+    PageSizeParam:
+      name: pageSize
+      in: query
+      description: Items per page
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 100
+
+  schemas:
+    # ==========================================
+    # CORE ENTITIES
+    # ==========================================
+    UserDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        emailConfirmed:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ServiceConnectionDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        serviceType:
+          type: string
+          enum: [Spotify, AppleMusic, Deezer, YouTubeMusic]
+        serviceAccountDisplayName:
+          type: string
+          example: John Doe
+          nullable: true
+        serviceAccountEmail:
+          type: string
+          format: email
+          nullable: true
+        serviceAccountProfileImageUrl:
+          type: string
+          format: uri
+          nullable: true
+        connectionStatus:
+          type: string
+          enum: [Active, Expired, Revoked, Error]
+        lastSyncedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    PlaylistSummaryDto:
+      type: object
+      description: Unified playlist view (platform or service)
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        playlistType:
+          type: string
+          enum: [Platform, Spotify, AppleMusic, Deezer, YouTubeMusic]
+        trackCount:
+          type: integer
+        imageUrl:
+          type: string
+          format: uri
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+
+    PlatformPlaylistDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        isPublic:
+          type: boolean
+        trackCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PlatformPlaylistDetailDto:
+      allOf:
+        - $ref: '#/components/schemas/PlatformPlaylistDto'
+        - type: object
+          properties:
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaylistTrackDto'
+
+    ServicePlaylistDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        serviceConnectionId:
+          type: string
+          format: uuid
+        servicePlaylistId:
+          type: string
+          description: External ID on music service
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        isOwnedByUser:
+          type: boolean
+        trackCount:
+          type: integer
+        imageUrl:
+          type: string
+          format: uri
+          nullable: true
+        serviceUrl:
+          type: string
+          format: uri
+          nullable: true
+        lastSyncedAt:
+          type: string
+          format: date-time
+          nullable: true
+        syncStatus:
+          type: string
+          enum: [Synced, Pending, Failed, Deleted]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ServicePlaylistDetailDto:
+      allOf:
+        - $ref: '#/components/schemas/ServicePlaylistDto'
+        - type: object
+          properties:
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaylistTrackDto'
+
+    TrackDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        serviceType:
+          type: string
+          enum: [Spotify, AppleMusic, Deezer, YouTubeMusic]
+        serviceTrackId:
+          type: string
+        title:
+          type: string
+        artist:
+          type: string
+        album:
+          type: string
+          nullable: true
+        durationMs:
+          type: integer
+          description: Track duration in milliseconds
+        isrc:
+          type: string
+          nullable: true
+          example: USRC17607839
+        imageUrl:
+          type: string
+          format: uri
+          nullable: true
+        serviceUrl:
+          type: string
+          format: uri
+          nullable: true
+
+    PlaylistTrackDto:
+      type: object
+      properties:
+        track:
+          $ref: '#/components/schemas/TrackDto'
+        position:
+          type: integer
+          minimum: 0
+        addedAt:
+          type: string
+          format: date-time
+
+    CopyOperationDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourcePlaylistId:
+          type: string
+          format: uuid
+        destinationServiceConnectionId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [Pending, Matching, Creating, Completed, Failed, Cancelled]
+        totalTracks:
+          type: integer
+        processedTracks:
+          type: integer
+        progressPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        createdAt:
+          type: string
+          format: date-time
+
+    CopyOperationDetailDto:
+      allOf:
+        - $ref: '#/components/schemas/CopyOperationDto'
+        - type: object
+          properties:
+            matchedTracks:
+              type: integer
+            unmatchedTracks:
+              type: integer
+            destinationPlaylistId:
+              type: string
+              format: uuid
+              nullable: true
+            unmatchedTrackDetails:
+              type: array
+              items:
+                type: object
+                properties:
+                  trackId:
+                    type: string
+                  title:
+                    type: string
+                  artist:
+                    type: string
+                  reason:
+                    type: string
+                  confidence:
+                    type: number
+                    format: float
+            completedAt:
+              type: string
+              format: date-time
+              nullable: true
+
+    PaginationDto:
+      type: object
+      properties:
+        currentPage:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 50
+        totalItems:
+          type: integer
+          example: 247
+        totalPages:
+          type: integer
+          example: 5
+        hasNext:
+          type: boolean
+        hasPrevious:
+          type: boolean
+
+    # ==========================================
+    # ERROR RESPONSES
+    # ==========================================
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Invalid request
+        message:
+          type: string
+          example: Email is already registered
+        statusCode:
+          type: integer
+          example: 400
+        timestamp:
+          type: string
+          format: date-time
+        path:
+          type: string
+          example: /api/v1/auth/register
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Authentication required or token invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

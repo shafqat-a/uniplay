@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hangfire.PostgreSql" Version="1.20.12" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity" Version="2.3.1" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    <PackageReference Include="Polly.Core" Version="8.6.4" />
+    <PackageReference Include="Polly.Extensions" Version="8.6.4" />
+    <PackageReference Include="SpotifyAPI.Web" Version="7.2.1" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
+    <PackageReference Include="YouTubeMusicAPI" Version="3.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UniPlay.Core\UniPlay.Core.csproj" />
+    <ProjectReference Include="..\UniPlay.Shared\UniPlay.Shared.csproj" />
+  </ItemGroup>
+
+</Project>
