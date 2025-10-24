@@ -435,15 +435,22 @@ None currently. All prerequisites are in place.
 - Redirect URI: `https://localhost:5001/api/v1/services/youtubemusic/callback`
 - Package installed: YouTubeMusicAPI 3.0.1
 
-**Note:** Playlist fetching returns empty list currently as YouTube Music requires YouTube Data API v3 integration for playlist retrieval. OAuth flow is fully functional.
+**Playlist Integration:**
+- ✅ Full YouTube Data API v3 integration implemented
+- ✅ Supports pagination for unlimited playlists (50 per page)
+- ✅ Fetches playlist metadata: title, description, thumbnail, privacy status
+- ✅ Returns accurate track counts via contentDetails
+- ✅ Constructs YouTube Music playlist URLs
+- ⚠️ Requires YouTube Data API v3 to be enabled in Google Cloud Console
+- ⚠️ API Key optional but recommended for quota tracking
 
 **Files Modified:**
-- `backend/src/UniPlay.Shared/Configuration/YouTubeMusicSettings.cs` (created)
-- `backend/src/UniPlay.Infrastructure/Services/MusicServices/YouTubeMusicAdapter.cs` (created)
+- `backend/src/UniPlay.Shared/Configuration/YouTubeMusicSettings.cs` (created, added ApiKey property)
+- `backend/src/UniPlay.Infrastructure/Services/MusicServices/YouTubeMusicAdapter.cs` (created with full API v3 integration)
 - `backend/src/UniPlay.Api/Program.cs` (registered YouTubeMusicAdapter)
-- `backend/src/UniPlay.Api/appsettings.json` (added YouTubeMusic section)
+- `backend/src/UniPlay.Api/appsettings.json` (added YouTubeMusic section with ApiKey)
 - `frontend/src/pages/DashboardPage.tsx` (removed disabled flag)
-- `DEPLOYMENT.md` (added YouTube Music OAuth setup instructions)
+- `DEPLOYMENT.md` (added comprehensive YouTube Music setup with API key instructions)
 
 ---
 

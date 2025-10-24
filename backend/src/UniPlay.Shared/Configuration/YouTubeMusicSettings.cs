@@ -24,4 +24,10 @@ public class YouTubeMusicSettings
     /// OAuth scopes required for YouTube Music access
     /// </summary>
     public string Scopes { get; set; } = "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.readonly";
+
+    /// <summary>
+    /// YouTube Data API v3 key (required for playlist fetching)
+    /// Note: Can be same project as OAuth credentials or separate
+    /// </summary>
+    public string ApiKey { get; set; } = string.Empty;
 }

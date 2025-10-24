@@ -67,16 +67,28 @@ dotnet user-secrets set "Spotify:ClientSecret" "your-spotify-client-secret"
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
 2. Create a new project or select existing
-3. Enable YouTube Data API v3
-4. Create OAuth 2.0 credentials
-5. Add redirect URI: `https://localhost:5001/api/v1/services/youtubemusic/callback`
-6. Copy Client ID and Client Secret
+3. **Enable YouTube Data API v3** in the API Library
+4. Create OAuth 2.0 credentials:
+   - Go to Credentials → Create Credentials → OAuth 2.0 Client ID
+   - Application type: Web application
+   - Add redirect URI: `https://localhost:5001/api/v1/services/youtubemusic/callback`
+5. Create an API Key (optional, for quota tracking):
+   - Go to Credentials → Create Credentials → API Key
+   - Restrict to YouTube Data API v3 (recommended)
+6. Copy Client ID, Client Secret, and API Key
 
 ```bash
 # Add YouTube Music credentials to user secrets
 dotnet user-secrets set "YouTubeMusic:ClientId" "your-google-client-id"
 dotnet user-secrets set "YouTubeMusic:ClientSecret" "your-google-client-secret"
+dotnet user-secrets set "YouTubeMusic:ApiKey" "your-youtube-data-api-key"
 ```
+
+**Important Notes:**
+- The API Key is optional when using OAuth but recommended for quota tracking
+- YouTube Data API v3 has daily quota limits (10,000 units/day by default)
+- Fetching playlists costs approximately 1-3 units per request
+- OAuth scopes required: `youtube` and `youtube.readonly`
 
 ### 4. Apply Database Migrations
 
@@ -177,7 +189,8 @@ dotnet ef migrations remove \
     "ClientId": "your-google-client-id",
     "ClientSecret": "your-google-client-secret",
     "RedirectUri": "https://localhost:5001/api/v1/services/youtubemusic/callback",
-    "Scopes": "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.readonly"
+    "Scopes": "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.readonly",
+    "ApiKey": "your-youtube-data-api-key"
   },
   "Hangfire": {
     "WorkerCount": 10,

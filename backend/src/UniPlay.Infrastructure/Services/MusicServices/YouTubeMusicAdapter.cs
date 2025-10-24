@@ -153,32 +153,79 @@ public class YouTubeMusicAdapter : IMusicServiceAdapter
         }
     }
 
-    public Task<List<ServicePlaylistInfo>> GetUserPlaylistsAsync(string accessToken)
+    public async Task<List<ServicePlaylistInfo>> GetUserPlaylistsAsync(string accessToken)
     {
-        _logger.LogInformation("Fetching YouTube Music playlists");
+        _logger.LogInformation("Fetching YouTube Music playlists via YouTube Data API v3");
 
         var playlists = new List<ServicePlaylistInfo>();
 
         try
         {
-            // Note: YouTube Music doesn't have a direct API for playlists like Spotify
-            // This would require using the YouTube Data API v3 to fetch playlists
-            // For now, return an empty list as a placeholder
-            //
-            // To implement this fully, you would:
-            // 1. Use YouTube Data API v3 with endpoint: https://www.googleapis.com/youtube/v3/playlists
-            // 2. Filter for playlists that are YouTube Music playlists
-            // 3. Map the response to ServicePlaylistInfo
-            //
-            // Example YouTube Data API call:
-            // var url = $"https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&mine=true&access_token={accessToken}";
-            // var response = await _httpClient.GetAsync(url);
-            // var data = await response.Content.ReadFromJsonAsync<YouTubePlaylistResponse>();
+            // YouTube Data API v3 endpoint for fetching user's playlists
+            // Note: API key is optional when using OAuth access token, but including it for quota tracking
+            var apiKey = _settings.ApiKey;
 
-            _logger.LogWarning("YouTube Music playlist fetching not yet implemented - requires YouTube Data API v3 integration");
+            // Fetch playlists - using both mine=true and accessing with OAuth token
+            var url = $"https://www.googleapis.com/youtube/v3/playlists" +
+                     $"?part=snippet,contentDetails,status" +
+                     $"&mine=true" +
+                     $"&maxResults=50" +
+                     $"&access_token={accessToken}";
 
-            // Return empty list for now
-            return Task.FromResult(playlists);
+            // Optionally add API key for quota tracking (not required with OAuth)
+            if (!string.IsNullOrEmpty(apiKey))
+            {
+                url += $"&key={apiKey}";
+            }
+
+            string? nextPageToken = null;
+
+            do
+            {
+                var requestUrl = nextPageToken != null
+                    ? $"{url}&pageToken={nextPageToken}"
+                    : url;
+
+                var response = await _httpClient.GetAsync(requestUrl);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("YouTube API error: {StatusCode} - {Content}",
+                        response.StatusCode, errorContent);
+                    break;
+                }
+
+                var data = await response.Content.ReadFromJsonAsync<YouTubePlaylistListResponse>();
+
+                if (data?.Items == null || data.Items.Count == 0)
+                {
+                    break;
+                }
+
+                foreach (var item in data.Items)
+                {
+                    playlists.Add(new ServicePlaylistInfo
+                    {
+                        ServicePlaylistId = item.Id ?? Guid.NewGuid().ToString(),
+                        Name = item.Snippet?.Title ?? "Untitled Playlist",
+                        Description = item.Snippet?.Description,
+                        ImageUrl = item.Snippet?.Thumbnails?.High?.Url
+                                  ?? item.Snippet?.Thumbnails?.Default?.Url,
+                        TrackCount = item.ContentDetails?.ItemCount ?? 0,
+                        IsPublic = item.Status?.PrivacyStatus == "public",
+                        IsCollaborative = false, // YouTube doesn't have collaborative playlists
+                        OwnerName = item.Snippet?.ChannelTitle ?? "Unknown",
+                        ServiceUrl = $"https://music.youtube.com/playlist?list={item.Id}"
+                    });
+                }
+
+                nextPageToken = data.NextPageToken;
+
+            } while (!string.IsNullOrEmpty(nextPageToken));
+
+            _logger.LogInformation("Retrieved {Count} playlists from YouTube Music", playlists.Count);
+            return playlists;
         }
         catch (Exception ex)
         {
@@ -202,5 +249,54 @@ public class YouTubeMusicAdapter : IMusicServiceAdapter
         public string Email { get; set; } = string.Empty;
         public string? Name { get; set; }
         public string? Picture { get; set; }
+    }
+
+    // Helper classes for YouTube Data API v3 responses
+    private class YouTubePlaylistListResponse
+    {
+        public string? NextPageToken { get; set; }
+        public List<YouTubePlaylistItem> Items { get; set; } = new();
+    }
+
+    private class YouTubePlaylistItem
+    {
+        public string? Id { get; set; }
+        public YouTubePlaylistSnippet? Snippet { get; set; }
+        public YouTubePlaylistContentDetails? ContentDetails { get; set; }
+        public YouTubePlaylistStatus? Status { get; set; }
+    }
+
+    private class YouTubePlaylistSnippet
+    {
+        public string? Title { get; set; }
+        public string? Description { get; set; }
+        public string? ChannelTitle { get; set; }
+        public YouTubeThumbnails? Thumbnails { get; set; }
+    }
+
+    private class YouTubePlaylistContentDetails
+    {
+        public int ItemCount { get; set; }
+    }
+
+    private class YouTubePlaylistStatus
+    {
+        public string? PrivacyStatus { get; set; }
+    }
+
+    private class YouTubeThumbnails
+    {
+        public YouTubeThumbnail? Default { get; set; }
+        public YouTubeThumbnail? Medium { get; set; }
+        public YouTubeThumbnail? High { get; set; }
+        public YouTubeThumbnail? Standard { get; set; }
+        public YouTubeThumbnail? Maxres { get; set; }
+    }
+
+    private class YouTubeThumbnail
+    {
+        public string? Url { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
     }
 }
